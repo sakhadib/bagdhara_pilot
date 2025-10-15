@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { app } from '../firebase/config';
 
 const AuthContext = createContext();
@@ -26,12 +26,18 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
+    // Set persistence to local (keep user logged in across browser sessions)
+    setPersistence(auth, browserLocalPersistence).then(() => {
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        setCurrentUser(user);
+        setLoading(false);
+      });
+
+      return unsubscribe;
+    }).catch((error) => {
+      console.error('Error setting auth persistence:', error);
       setLoading(false);
     });
-
-    return unsubscribe;
   }, [auth]);
 
   const value = {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Play, Eye, Trophy } from 'lucide-react';
+import { Play, Eye, Trophy, Users, Copy } from 'lucide-react';
 import { collection, getDocs, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Header from '../components/Header';
@@ -13,6 +13,8 @@ function Dashboard() {
   const [completedChecks, setCompletedChecks] = useState(0);
   const [pendingIssues, setPendingIssues] = useState(0);
   const [modelLeaderboard, setModelLeaderboard] = useState([]);
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   useEffect(() => {
     if (!currentUser) {
@@ -35,12 +37,32 @@ function Dashboard() {
 
       let done = 0;
       const modelScores = {};
+      const activeUsersMap = {};
       
       snapshot.forEach(doc => {
         const data = doc.data();
+        const docId = doc.id;
+        
+        // Debug: log document structure for first few docs
+        if (snapshot.docs.indexOf(doc) < 3) {
+          console.log('Document data:', data);
+        }
         
         // Count completed scripts
         if (data.status === "done") done++;
+        
+        // Track active users (any locked documents)
+        if (data.lock && data.lock.state === true && data.lock.user) {
+          if (!activeUsersMap[data.lock.user]) {
+            activeUsersMap[data.lock.user] = [];
+          }
+          activeUsersMap[data.lock.user].push({
+            docId: docId,
+            lockedAt: data.lock.time,
+            status: data.status,
+            idiom: data.idiom || 'Idiom not available'
+          });
+        }
         
         // Calculate model scores
         if (data.predictions && Array.isArray(data.predictions)) {
@@ -63,6 +85,13 @@ function Dashboard() {
       setCompletedChecks(done);
       setPendingIssues(pending);
 
+      // Convert active users map to array
+      const activeUsersArray = Object.entries(activeUsersMap).map(([user, documents]) => ({
+        user,
+        documents: documents.sort((a, b) => b.lockedAt?.toMillis() - a.lockedAt?.toMillis()) // Most recent first
+      }));
+      setActiveUsers(activeUsersArray);
+
       // Convert to sorted leaderboard array
       const leaderboard = Object.entries(modelScores)
         .map(([model, stats]) => ({
@@ -82,6 +111,31 @@ function Dashboard() {
 
   function handleStartScriptCheck() {
     navigate('/script');
+  }
+
+  async function copyLeaderboardToClipboard() {
+    try {
+      const leaderboardData = {
+        timestamp: new Date().toISOString(),
+        totalModels: modelLeaderboard.length,
+        models: modelLeaderboard.map((model, index) => ({
+          rank: index + 1,
+          name: model.model,
+          totalScore: model.totalScore,
+          maxPossibleScore: model.gradedCount * 5,
+          evaluationsCount: model.gradedCount,
+          averageScore: parseFloat(model.averageScore),
+          percentage: parseFloat(((parseFloat(model.averageScore) / 5) * 100).toFixed(1))
+        }))
+      };
+
+      await navigator.clipboard.writeText(JSON.stringify(leaderboardData, null, 2));
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy leaderboard:', err);
+      alert('Failed to copy leaderboard data to clipboard');
+    }
   }
 
   return (
@@ -166,11 +220,68 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Model Leaderboard */}
+        {/* Active Users Section */}
         <div className="bg-white rounded-xl p-8 border border-gray-200 mt-8">
           <div className="flex items-center mb-4">
-            <Trophy className="w-6 h-6 text-yellow-600 mr-3" />
-            <h2 className="text-2xl font-bold text-gray-800">Model Leaderboard</h2>
+            <Users className="w-6 h-6 text-blue-600 mr-3" />
+            <h2 className="text-2xl font-bold text-gray-800">Active Evaluators</h2>
+          </div>
+          <p className="text-gray-600 mb-6">Users currently working on idiom evaluation scripts.</p>
+          
+          {activeUsers.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {activeUsers.map((activeUser) => (
+                <div key={activeUser.user} className="border border-gray-200 rounded-lg p-4 bg-white">
+                  <div className="flex items-center mb-3">
+                    <h3 className="text-lg font-semibold text-gray-900">{activeUser.user.split('@')[0]}</h3>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-600 font-medium">Working on:</p>
+                    {activeUser.documents.map((doc, index) => (
+                      <div key={index} className="bg-gray-50 rounded p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          {/* <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            doc.status === 'done' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {doc.status === 'done' ? 'Completed' : 'In Progress'}
+                          </span> */}
+                          {doc.lockedAt && (
+                            <span className="text-xs text-gray-500">
+                              {Math.floor((Date.now() - doc.lockedAt.toMillis()) / (1000 * 60))}m ago
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-medium text-gray-900 line-clamp-2" title={doc.idiom}>
+                          {doc.idiom}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-center py-8">No active evaluators at the moment.</p>
+          )}
+        </div>
+
+        {/* Model Leaderboard */}
+        <div className="bg-white rounded-xl p-8 border border-gray-200 mt-8">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center">
+              <Trophy className="w-6 h-6 text-yellow-600 mr-3" />
+              <h2 className="text-2xl font-bold text-gray-800">Model Leaderboard</h2>
+            </div>
+            {modelLeaderboard.length > 0 && (
+              <button
+                onClick={copyLeaderboardToClipboard}
+                className="flex items-center px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors duration-200 text-sm font-medium"
+                title="Copy leaderboard data as JSON"
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                {copySuccess ? 'Copied!' : 'Copy JSON'}
+              </button>
+            )}
           </div>
           <p className="text-gray-600 mb-6">AI model performance based on cumulative grades across all evaluated scripts.</p>
           
@@ -213,6 +324,7 @@ function Dashboard() {
             <p className="text-gray-500 text-center py-8">No model evaluations available yet.</p>
           )}
         </div>
+
       </div>
     </div>
   );
