@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Play, Eye, Trophy, Users, Copy } from 'lucide-react';
+import { Play, Eye, Trophy, Users, Copy, ChevronDown, ChevronRight } from 'lucide-react';
 import { collection, getDocs, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Header from '../components/Header';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 function Dashboard() {
   const { currentUser, logout } = useAuth();
@@ -15,6 +16,8 @@ function Dashboard() {
   const [modelLeaderboard, setModelLeaderboard] = useState([]);
   const [activeUsers, setActiveUsers] = useState([]);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [contributorLeaderboard, setContributorLeaderboard] = useState([]);
+  const [expandedUser, setExpandedUser] = useState(null);
 
   useEffect(() => {
     if (!currentUser) {
@@ -38,6 +41,7 @@ function Dashboard() {
       let done = 0;
       const modelScores = {};
       const activeUsersMap = {};
+      const contributorStats = {};
       
       snapshot.forEach(doc => {
         const data = doc.data();
@@ -50,6 +54,21 @@ function Dashboard() {
         
         // Count completed scripts
         if (data.status === "done") done++;
+        
+        // Track contributors (completed scripts)
+        if (data.status === "done" && data.completedBy) {
+          const username = data.completedBy.split('@')[0];
+          if (!contributorStats[username]) {
+            contributorStats[username] = {
+              totalCompleted: 0,
+              completedAt: []
+            };
+          }
+          contributorStats[username].totalCompleted += 1;
+          if (data.completedAt) {
+            contributorStats[username].completedAt.push(data.completedAt.toDate());
+          }
+        }
         
         // Track active users (any locked documents)
         if (data.lock && data.lock.state === true && data.lock.user) {
@@ -103,6 +122,17 @@ function Dashboard() {
         .sort((a, b) => b.totalScore - a.totalScore);
 
       setModelLeaderboard(leaderboard);
+
+      // Convert contributor stats to sorted leaderboard
+      const contributorBoard = Object.entries(contributorStats)
+        .map(([username, stats]) => ({
+          username,
+          totalCompleted: stats.totalCompleted,
+          completedAt: stats.completedAt.sort((a, b) => a - b) // Sort timestamps
+        }))
+        .sort((a, b) => b.totalCompleted - a.totalCompleted);
+
+      setContributorLeaderboard(contributorBoard);
     });
 
     // Return cleanup function
@@ -111,6 +141,45 @@ function Dashboard() {
 
   function handleStartScriptCheck() {
     navigate('/script');
+  }
+
+  function generateHourlyProgressData(completedTimestamps) {
+    if (!completedTimestamps || completedTimestamps.length === 0) return [];
+
+    // Get the date range
+    const sortedTimestamps = completedTimestamps.sort((a, b) => a - b);
+    const startDate = new Date(sortedTimestamps[0]);
+    const endDate = new Date(sortedTimestamps[sortedTimestamps.length - 1]);
+    
+    // Create hourly buckets from start to end
+    const hourlyData = [];
+    const current = new Date(startDate);
+    current.setMinutes(0, 0, 0); // Start of hour
+    
+    while (current <= endDate) {
+      const hourStart = new Date(current);
+      const hourEnd = new Date(current);
+      hourEnd.setHours(hourEnd.getHours() + 1);
+      
+      const completionsInHour = completedTimestamps.filter(
+        timestamp => timestamp >= hourStart && timestamp < hourEnd
+      ).length;
+      
+      hourlyData.push({
+        hour: hourStart.toLocaleString('en-US', { 
+          month: 'short', 
+          day: 'numeric',
+          hour: 'numeric',
+          hour12: true 
+        }),
+        completions: completionsInHour,
+        cumulative: hourlyData.length > 0 ? hourlyData[hourlyData.length - 1].cumulative + completionsInHour : completionsInHour
+      });
+      
+      current.setHours(current.getHours() + 1);
+    }
+    
+    return hourlyData;
   }
 
   async function copyLeaderboardToClipboard() {
@@ -218,6 +287,91 @@ function Dashboard() {
               Open Navigator
             </button>
           </div>
+        </div>
+
+        {/* Contributor Ranks Section */}
+        <div className="bg-white rounded-xl p-8 border border-gray-200 mt-8">
+          <div className="flex items-center mb-4">
+            <Trophy className="w-6 h-6 text-purple-600 mr-3" />
+            <h2 className="text-2xl font-bold text-gray-800">Contributor Ranks</h2>
+          </div>
+          <p className="text-gray-600 mb-6">Top contributors based on completed idiom evaluations.</p>
+          
+          {contributorLeaderboard.length > 0 ? (
+            <div className="space-y-4">
+              {contributorLeaderboard.map((contributor, index) => (
+                <div key={contributor.username} className="border border-gray-200 rounded-lg">
+                  <div 
+                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
+                    onClick={() => setExpandedUser(expandedUser === contributor.username ? null : contributor.username)}
+                  >
+                    <div className="flex items-center">
+                      <span className="text-lg font-bold text-gray-500 mr-4">#{index + 1}</span>
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">{contributor.username}</h3>
+                        <p className="text-sm text-gray-600">{contributor.totalCompleted} evaluations completed</p>
+                      </div>
+                    </div>
+                    {expandedUser === contributor.username ? 
+                      <ChevronDown className="w-5 h-5 text-gray-500" /> : 
+                      <ChevronRight className="w-5 h-5 text-gray-500" />
+                    }
+                  </div>
+                  
+                  {expandedUser === contributor.username && (
+                    <div className="px-4 pb-4">
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Hour-by-Hour Progress</h4>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={generateHourlyProgressData(contributor.completedAt)}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis 
+                                dataKey="hour" 
+                                tick={{ fontSize: 12 }}
+                                interval="preserveStartEnd"
+                              />
+                              <YAxis tick={{ fontSize: 12 }} />
+                              <Tooltip 
+                                labelFormatter={(label) => `Time: ${label}`}
+                                formatter={(value, name) => [
+                                  name === 'completions' ? `${value} completions` : `${value} total`,
+                                  name === 'completions' ? 'Hourly' : 'Cumulative'
+                                ]}
+                              />
+                              <Area 
+                                type="monotone" 
+                                dataKey="cumulative" 
+                                stackId="1" 
+                                stroke="#8b5cf6" 
+                                fill="#8b5cf6" 
+                                fillOpacity={0.6}
+                                name="cumulative"
+                              />
+                              <Area 
+                                type="monotone" 
+                                dataKey="completions" 
+                                stackId="2" 
+                                stroke="#06b6d4" 
+                                fill="#06b6d4" 
+                                fillOpacity={0.8}
+                                name="completions"
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">
+                          Blue area shows hourly completions, Purple area shows cumulative progress over time
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-center py-8">No completed evaluations yet.</p>
+          )}
         </div>
 
         {/* Active Users Section */}
