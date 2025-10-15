@@ -90,7 +90,7 @@ function Script() {
       const q = query(
         collection(db, 'pilot'),
         orderBy('__name__'),
-        limit(20)
+        limit(100)
       );
 
       const querySnapshot = await getDocs(q);
