@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { Play, Eye, Trophy } from 'lucide-react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Header from '../components/Header';
 
@@ -22,28 +22,27 @@ function Dashboard() {
 
   useEffect(() => {
     if (currentUser) {
-      fetchStats();
+      const unsubscribe = fetchStats();
+      return unsubscribe; // Cleanup listener on unmount
     }
   }, [currentUser]);
 
-  async function fetchStats() {
-    try {
-      const totalSnapshot = await getDocs(collection(db, "pilot"));
-      const total = totalSnapshot.size;
-      const doneQuery = query(collection(db, "pilot"), where("status", "==", "done"));
-      const doneSnapshot = await getDocs(doneQuery);
-      const done = doneSnapshot.size;
-      const pending = total - done;
+  function fetchStats() {
+    // Set up real-time listener for both stats and leaderboard
+    const unsubscribe = onSnapshot(collection(db, "pilot"), (snapshot) => {
+      const total = snapshot.size;
       setTotalScripts(total);
-      setCompletedChecks(done);
-      setPendingIssues(pending);
 
-      // Calculate model leaderboard
+      let done = 0;
       const modelScores = {};
-      const allDocsSnapshot = await getDocs(collection(db, "pilot"));
       
-      allDocsSnapshot.forEach(doc => {
+      snapshot.forEach(doc => {
         const data = doc.data();
+        
+        // Count completed scripts
+        if (data.status === "done") done++;
+        
+        // Calculate model scores
         if (data.predictions && Array.isArray(data.predictions)) {
           data.predictions.forEach(prediction => {
             if (prediction.grade !== undefined && prediction.grade !== null && prediction.model) {
@@ -60,7 +59,11 @@ function Dashboard() {
         }
       });
 
-      // Convert to sorted array
+      const pending = total - done;
+      setCompletedChecks(done);
+      setPendingIssues(pending);
+
+      // Convert to sorted leaderboard array
       const leaderboard = Object.entries(modelScores)
         .map(([model, stats]) => ({
           model,
@@ -71,9 +74,10 @@ function Dashboard() {
         .sort((a, b) => b.totalScore - a.totalScore);
 
       setModelLeaderboard(leaderboard);
-    } catch (error) {
-      console.error("Error fetching stats:", error);
-    }
+    });
+
+    // Return cleanup function
+    return unsubscribe;
   }
 
   function handleStartScriptCheck() {

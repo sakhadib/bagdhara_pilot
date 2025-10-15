@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase/config';
-import { collection, query, orderBy, limit, getDocs, doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, doc, updateDoc, serverTimestamp, getDoc, onSnapshot } from 'firebase/firestore';
 import Header from '../components/Header';
 import { FileText, ChevronLeft, ChevronRight, Info, MessageSquare, ClipboardList, CheckCircle, Lightbulb, Heart, Tag, Bot, AlertTriangle } from 'lucide-react';
 
@@ -69,26 +69,22 @@ function Script() {
     fetchScript();
   }, [currentUser, navigate]);
 
+  // Real-time stats listener
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'pilot'), (snapshot) => {
+      const completed = snapshot.docs.filter(doc => doc.data().status === 'done').length;
+      setCompletedCount(completed);
+    });
+
+    return unsubscribe; // Cleanup listener on unmount
+  }, []);
+
   async function fetchScript() {
     try {
       setLoading(true);
       setError('');
 
       const expiredTime = new Date(Date.now() - 40 * 60 * 1000); // 40 minutes ago
-
-      // First, get count of completed scripts
-      const completedQuery = query(
-        collection(db, 'pilot'),
-        orderBy('__name__')
-      );
-      
-      const completedSnapshot = await getDocs(completedQuery);
-      const completedCount = completedSnapshot.docs.filter(doc => {
-        const data = doc.data();
-        return data.status === 'done';
-      }).length;
-      
-      setCompletedCount(completedCount);
 
       // Query all scripts, limit to 20 for efficiency
       const q = query(
