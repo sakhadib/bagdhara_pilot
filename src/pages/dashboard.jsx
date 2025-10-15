@@ -196,7 +196,7 @@ function Dashboard() {
                         {model.model}
                       </td>
                       <td className="px-4 py-3 text-lg font-semibold text-green-600">
-                        {model.totalScore}
+                        {model.totalScore} / {(model.gradedCount * 5) || 0}
                       </td>
                       <td className="px-4 py-3 text-lg text-gray-700">
                         {model.gradedCount}
