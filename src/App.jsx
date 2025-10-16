@@ -19,7 +19,7 @@ function App() {
       <div className="min-h-screen flex flex-col">
         <Router>
           <Routes>
-            <Route path="/" element={<Signup />} />
+            <Route path="/" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/login" element={<Login />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
