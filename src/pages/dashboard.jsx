@@ -47,11 +47,6 @@ function Dashboard() {
         const data = doc.data();
         const docId = doc.id;
         
-        // Debug: log document structure for first few docs
-        if (snapshot.docs.indexOf(doc) < 3) {
-          console.log('Document data:', data);
-        }
-        
         // Count completed scripts
         if (data.status === "done") done++;
         
@@ -83,18 +78,28 @@ function Dashboard() {
           });
         }
         
-        // Calculate model scores
+        // Calculate model scores and track ungraded documents
         if (data.predictions && Array.isArray(data.predictions)) {
           data.predictions.forEach(prediction => {
-            if (prediction.grade !== undefined && prediction.grade !== null && prediction.model) {
+            if (prediction.model) {
               if (!modelScores[prediction.model]) {
                 modelScores[prediction.model] = {
                   totalScore: 0,
-                  gradedCount: 0
+                  gradedCount: 0,
+                  ungradedDocIds: []
                 };
               }
-              modelScores[prediction.model].totalScore += prediction.grade;
-              modelScores[prediction.model].gradedCount += 1;
+
+              // Check if grade exists and is not null
+              if (prediction.grade !== undefined && prediction.grade !== null) {
+                modelScores[prediction.model].totalScore += prediction.grade;
+                modelScores[prediction.model].gradedCount += 1;
+              } else {
+                // Model appears but has no grade - add to ungraded list
+                if (!modelScores[prediction.model].ungradedDocIds.includes(docId)) {
+                  modelScores[prediction.model].ungradedDocIds.push(docId);
+                }
+              }
             }
           });
         }
@@ -117,7 +122,8 @@ function Dashboard() {
           model,
           totalScore: stats.totalScore,
           gradedCount: stats.gradedCount,
-          averageScore: stats.gradedCount > 0 ? (stats.totalScore / stats.gradedCount).toFixed(2) : 0
+          averageScore: stats.gradedCount > 0 ? (stats.totalScore / stats.gradedCount).toFixed(2) : 0,
+          ungradedDocIds: stats.ungradedDocIds
         }))
         .sort((a, b) => b.totalScore - a.totalScore);
 
@@ -193,6 +199,7 @@ function Dashboard() {
           totalScore: model.totalScore,
           maxPossibleScore: model.gradedCount * 5,
           evaluationsCount: model.gradedCount,
+          ungradedDocIds: model.ungradedDocIds,
           averageScore: parseFloat(model.averageScore),
           percentage: parseFloat(((parseFloat(model.averageScore) / 5) * 100).toFixed(1))
         }))
@@ -448,6 +455,7 @@ function Dashboard() {
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Model</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Total Score</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Evaluations</th>
+                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Ungraded Docs</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Percentage</th>
                   </tr>
                 </thead>
@@ -465,6 +473,11 @@ function Dashboard() {
                       </td>
                       <td className="px-4 py-3 text-lg text-gray-700">
                         {model.gradedCount}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        <div className="max-w-32 truncate" title={model.ungradedDocIds.length > 0 ? model.ungradedDocIds.join(', ') : 'All graded'}>
+                          {model.ungradedDocIds.length > 0 ? `[${model.ungradedDocIds.join(', ')}]` : 'All graded'}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-lg text-gray-700">
                         {((parseFloat(model.averageScore) / 5) * 100).toFixed(1)}%

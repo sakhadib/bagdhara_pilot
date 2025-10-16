@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase/config';
@@ -15,11 +15,24 @@ function Script() {
   const [currentPredictionIndex, setCurrentPredictionIndex] = useState(0);
   const [completedCount, setCompletedCount] = useState(0);
 
+  const sortedPredictions = useMemo(() => {
+    return scriptData?.predictions?.map((pred, originalIndex) => ({
+      ...pred,
+      originalIndex
+    })).sort((a, b) => {
+      const aGraded = a.grade !== undefined;
+      const bGraded = b.grade !== undefined;
+      if (aGraded && !bGraded) return 1;
+      if (!aGraded && bGraded) return -1;
+      return 0;
+    }) || [];
+  }, [scriptData?.predictions]);
+
   const handleSubmitScript = async () => {
     if (!scriptData || !scriptData.predictions) return;
     
     // Check if all predictions are graded
-    const allGraded = scriptData.predictions.every(pred => pred.grade !== undefined);
+    const allGraded = sortedPredictions.every(pred => pred.grade !== undefined);
     
     if (!allGraded) {
       alert('Please grade all model responses before submitting.');
@@ -48,15 +61,15 @@ function Script() {
 
   const goToNextPrediction = () => {
     setCurrentPredictionIndex(prev => 
-      Math.min((scriptData.predictions?.length || 1) - 1, prev + 1)
+      Math.min(sortedPredictions.length - 1, prev + 1)
     );
   };
 
-  const handleGradeUpdate = (index, grade) => {
+  const handleGradeUpdate = (originalIndex, grade) => {
     setScriptData(prev => ({
       ...prev,
       predictions: prev.predictions.map((pred, i) => 
-        i === index ? { ...pred, grade } : pred
+        i === originalIndex ? { ...pred, grade } : pred
       )
     }));
   };
@@ -250,16 +263,16 @@ function Script() {
                       <h4 className="text-lg font-medium text-gray-700">Complete Script Review</h4>
                     </div>
                     <p className="text-sm text-gray-600 mb-4">
-                      Once you've graded all {scriptData.predictions?.length || 0} model responses, submit this script to mark it as complete and move to the next one.
+                      Once you've graded all {sortedPredictions.length} model responses, submit this script to mark it as complete and move to the next one.
                     </p>
                     <button
                       onClick={handleSubmitScript}
-                      disabled={!scriptData.predictions?.every(pred => pred.grade !== undefined)}
+                      disabled={!sortedPredictions.every(pred => pred.grade !== undefined)}
                       className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors duration-200"
                     >
-                      {scriptData.predictions?.every(pred => pred.grade !== undefined) 
+                      {sortedPredictions.every(pred => pred.grade !== undefined) 
                         ? 'Submit & Move to Next Script' 
-                        : `Grade ${scriptData.predictions?.filter(pred => pred.grade === undefined).length || 0} more responses`
+                        : `Grade ${sortedPredictions.filter(pred => pred.grade === undefined).length} more responses`
                       }
                     </button>
                   </div>
@@ -269,11 +282,19 @@ function Script() {
                 <div className="lg:col-span-2 space-y-6">
                   <hr className="mb-6 border-gray-300 lg:hidden" />
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <MessageSquare className="w-6 h-6 text-gray-600 mr-3" />
-                      <h3 className="text-xl font-semibold text-gray-800">Model Responses</h3>
+                    <div className="flex flex-row items-center">
+                      <div className="flex items-center">
+                        <MessageSquare className="w-6 h-6 text-gray-600 mr-3 hidden md:block" />
+                        <h3 className="text-xl font-semibold text-gray-800">Scripts</h3>
+                      </div>
+                      <div className="flex items-center ml-3">
+                        <CheckCircle className="w-4 h-4 text-green-600 mr-1" />
+                        <span className="text-sm text-gray-600">
+                          {sortedPredictions.filter(pred => pred.grade !== undefined).length}/{sortedPredictions.length}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 md:hidden">
                       <button
                         onClick={() => setCurrentPredictionIndex(prev => Math.max(0, prev - 1))}
                         disabled={currentPredictionIndex === 0}
@@ -281,9 +302,12 @@ function Script() {
                       >
                         <ChevronLeft className="w-4 h-4" />
                       </button>
+                      <span className="text-sm text-gray-600 px-2">
+                        {currentPredictionIndex + 1} of {sortedPredictions.length}
+                      </span>
                       <button
-                        onClick={() => setCurrentPredictionIndex(prev => Math.min((scriptData.predictions?.length || 1) - 1, prev + 1))}
-                        disabled={currentPredictionIndex >= (scriptData.predictions?.length || 0) - 1}
+                        onClick={() => setCurrentPredictionIndex(prev => Math.min(sortedPredictions.length - 1, prev + 1))}
+                        disabled={currentPredictionIndex >= sortedPredictions.length - 1}
                         className="flex items-center p-2 text-gray-600 hover:text-gray-800 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-300 rounded hover:bg-gray-50"
                       >
                         <ChevronRight className="w-4 h-4" />
@@ -299,11 +323,11 @@ function Script() {
                         Previous
                       </button>
                       <span className="text-sm text-gray-600">
-                        {currentPredictionIndex + 1} of {scriptData.predictions?.length || 0}
+                        {currentPredictionIndex + 1} of {sortedPredictions.length}
                       </span>
                       <button
-                        onClick={() => setCurrentPredictionIndex(prev => Math.min((scriptData.predictions?.length || 1) - 1, prev + 1))}
-                        disabled={currentPredictionIndex >= (scriptData.predictions?.length || 0) - 1}
+                        onClick={() => setCurrentPredictionIndex(prev => Math.min(sortedPredictions.length - 1, prev + 1))}
+                        disabled={currentPredictionIndex >= sortedPredictions.length - 1}
                         className="flex items-center px-3 py-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Next
@@ -313,9 +337,9 @@ function Script() {
                   </div>
                   {scriptData.predictions && scriptData.predictions[currentPredictionIndex] && (
                     <ModelResponse
-                      prediction={scriptData.predictions[currentPredictionIndex]}
-                      index={currentPredictionIndex}
-                      total={scriptData.predictions?.length || 0}
+                      prediction={sortedPredictions[currentPredictionIndex]}
+                      index={sortedPredictions[currentPredictionIndex]?.originalIndex}
+                      total={sortedPredictions.length}
                       docId={scriptData.id}
                       onNext={goToNextPrediction}
                       onGradeUpdate={handleGradeUpdate}
@@ -330,16 +354,16 @@ function Script() {
                       <h4 className="text-lg font-medium text-gray-700">Complete Script Review</h4>
                     </div>
                     <p className="text-sm text-gray-600 mb-4">
-                      Once you've graded all {scriptData.predictions?.length || 0} model responses, submit this script to mark it as complete and move to the next one.
+                      Once you've graded all {sortedPredictions.length} model responses, submit this script to mark it as complete and move to the next one.
                     </p>
                     <button
                       onClick={handleSubmitScript}
-                      disabled={!scriptData.predictions?.every(pred => pred.grade !== undefined)}
+                      disabled={!sortedPredictions.every(pred => pred.grade !== undefined)}
                       className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors duration-200"
                     >
-                      {scriptData.predictions?.every(pred => pred.grade !== undefined) 
+                      {sortedPredictions.every(pred => pred.grade !== undefined) 
                         ? 'Submit & Move to Next Script' 
-                        : `Grade ${scriptData.predictions?.filter(pred => pred.grade === undefined).length || 0} more responses`
+                        : `Grade ${sortedPredictions.filter(pred => pred.grade === undefined).length} more responses`
                       }
                     </button>
                   </div>
@@ -365,7 +389,7 @@ function Script() {
                     </tr>
                   </thead>
                   <tbody>
-                    {scriptData.predictions.map((pred, idx) => (
+                    {sortedPredictions.map((pred, idx) => (
                       <tr key={idx} className="hover:bg-gray-50 border-b border-gray-200">
                         <td className="px-4 py-3 text-lg font-medium text-gray-900">
                           {pred.model}
@@ -506,12 +530,11 @@ function ModelResponse({ prediction, index, total, docId, onNext, onGradeUpdate 
 
   return (
     <div className="border-0 md:border md:border-gray-200 rounded-none md:rounded-lg p-0 md:p-6 bg-transparent md:bg-white">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center mb-4">
         <div className="flex items-center">
           <Bot className="w-5 h-5 text-blue-600 mr-2" />
           <h4 className="font-semibold text-blue-700 text-lg">{prediction.model}</h4>
         </div>
-        <span className="text-sm text-gray-500">{index + 1}/{total}</span>
       </div>
       <div className="mb-6">
         <p className="text-gray-900 text-lg md:text-2xl leading-relaxed whitespace-pre-wrap font-medium">
