@@ -199,7 +199,6 @@ function Dashboard() {
           totalScore: model.totalScore,
           maxPossibleScore: model.gradedCount * 5,
           evaluationsCount: model.gradedCount,
-          ungradedDocIds: model.ungradedDocIds,
           averageScore: parseFloat(model.averageScore),
           percentage: parseFloat(((parseFloat(model.averageScore) / 5) * 100).toFixed(1))
         }))
@@ -455,7 +454,6 @@ function Dashboard() {
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Model</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Total Score</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Evaluations</th>
-                    <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Ungraded Docs</th>
                     <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700 border-b">Percentage</th>
                   </tr>
                 </thead>
@@ -473,11 +471,6 @@ function Dashboard() {
                       </td>
                       <td className="px-4 py-3 text-lg text-gray-700">
                         {model.gradedCount}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">
-                        <div className="max-w-32 truncate" title={model.ungradedDocIds.length > 0 ? model.ungradedDocIds.join(', ') : 'All graded'}>
-                          {model.ungradedDocIds.length > 0 ? `[${model.ungradedDocIds.join(', ')}]` : 'All graded'}
-                        </div>
                       </td>
                       <td className="px-4 py-3 text-lg text-gray-700">
                         {((parseFloat(model.averageScore) / 5) * 100).toFixed(1)}%
