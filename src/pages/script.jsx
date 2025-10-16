@@ -60,9 +60,37 @@ function Script() {
   };
 
   const goToNextPrediction = () => {
-    setCurrentPredictionIndex(prev => 
-      Math.min(sortedPredictions.length - 1, prev + 1)
+    // Find the next ungraded prediction
+    const nextUngradedIndex = sortedPredictions.findIndex((pred, idx) => 
+      idx > currentPredictionIndex && pred.grade === undefined
     );
+    
+    if (nextUngradedIndex !== -1) {
+      // Found an ungraded prediction after current position
+      setCurrentPredictionIndex(nextUngradedIndex);
+    } else {
+      // No ungraded predictions after current position, find the first ungraded
+      const firstUngradedIndex = sortedPredictions.findIndex(pred => pred.grade === undefined);
+      
+      if (firstUngradedIndex !== -1) {
+        // Found an ungraded prediction somewhere
+        setCurrentPredictionIndex(firstUngradedIndex);
+      } else {
+        // All predictions are graded, go to next in sequence or stay at current
+        setCurrentPredictionIndex(prev => 
+          Math.min(sortedPredictions.length - 1, prev + 1)
+        );
+      }
+    }
+  };
+
+  const goToNextUngraded = () => {
+    // Find the next ungraded prediction from any position
+    const nextUngradedIndex = sortedPredictions.findIndex(pred => pred.grade === undefined);
+    
+    if (nextUngradedIndex !== -1) {
+      setCurrentPredictionIndex(nextUngradedIndex);
+    }
   };
 
   const handleGradeUpdate = (originalIndex, grade) => {
@@ -343,6 +371,8 @@ function Script() {
                       docId={scriptData.id}
                       onNext={goToNextPrediction}
                       onGradeUpdate={handleGradeUpdate}
+                      onGoToNextUngraded={goToNextUngraded}
+                      sortedPredictions={sortedPredictions}
                     />
                   )}
 
@@ -421,10 +451,15 @@ function Script() {
 
 export default Script;
 
-function ModelResponse({ prediction, index, total, docId, onNext, onGradeUpdate }) {
+function ModelResponse({ prediction, index, total, docId, onNext, onGradeUpdate, onGoToNextUngraded, sortedPredictions }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [selectedGrade, setSelectedGrade] = useState(null);
+
+  // Check if there are any ungraded predictions
+  const hasUngradedPredictions = sortedPredictions?.some(pred => pred.grade === undefined);
+  const allGraded = sortedPredictions?.every(pred => pred.grade !== undefined);
+  const isCurrentGraded = prediction.grade !== undefined;
 
   useEffect(() => {
     const handleKeyPress = (event) => {
@@ -458,9 +493,7 @@ function ModelResponse({ prediction, index, total, docId, onNext, onGradeUpdate 
       return;
     }
 
-    // Immediately transition to next prediction for smooth UX
     const currentGrade = selectedGrade;
-    onNext();
     setSelectedGrade(null); // Reset for next prediction
     setMessage(''); // Clear any previous messages
 
@@ -480,19 +513,19 @@ function ModelResponse({ prediction, index, total, docId, onNext, onGradeUpdate 
         // Update local state
         onGradeUpdate(index, currentGrade);
 
-        // Optional: Show brief success feedback (could be removed for even smoother UX)
+        // Show success message briefly
+        setMessage('Grade saved successfully!');
+        setTimeout(() => setMessage(''), 1500);
+
+        // After saving, automatically navigate to next ungraded prediction
         setTimeout(() => {
-          setMessage('Grade saved successfully!');
-          setTimeout(() => setMessage(''), 1500);
-        }, 100);
+          onNext();
+        }, 500);
       }
     } catch (err) {
       console.error('Error saving grade:', err);
-      // Show error message briefly, but don't block the flow
-      setTimeout(() => {
-        setMessage('Failed to save grade. Please try again.');
-        setTimeout(() => setMessage(''), 3000);
-      }, 100);
+      setMessage('Failed to save grade. Please try again.');
+      setTimeout(() => setMessage(''), 3000);
     }
   };
 
@@ -542,43 +575,91 @@ function ModelResponse({ prediction, index, total, docId, onNext, onGradeUpdate 
         </p>
       </div>
       {prediction.grade !== undefined && (
-        <p className="text-base text-blue-600 mb-4">Current Grade: {prediction.grade}/5</p>
-      )}
-      <div className="mb-4">
-        <p className="text-base text-gray-700 mb-2">Rate this response:</p>
-        <div className="flex space-x-2 mb-3">
-          {[0, 1, 2, 3, 4, 5].map((gradeValue) => (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <p className="text-base text-green-700 mb-2">✓ Current Grade: {prediction.grade}/5</p>
+          {hasUngradedPredictions && (
             <button
-              key={gradeValue}
-              onClick={() => handleGradeSelect(gradeValue)}
-              className={`px-4 py-2 rounded text-base font-medium transition-colors duration-200 ${
-                selectedGrade === gradeValue
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-              }`}
+              onClick={onGoToNextUngraded}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded mr-2"
             >
-              {gradeValue}
+              Go to Next Ungraded
             </button>
-          ))}
+          )}
+          {allGraded && (
+            <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+              <p className="text-sm text-blue-700">🎉 All responses graded! Click "Submit & Move to Next Script" to continue.</p>
+            </div>
+          )}
         </div>
-        <div className="flex space-x-3">
-          <button
-            onClick={handleSave}
-            disabled={selectedGrade === null}
-            className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white text-base rounded disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Save Grade
-          </button>
-          {prediction.grade !== undefined && (
+      )}
+      
+      {prediction.grade === undefined && (
+        <div className="mb-4">
+          <p className="text-base text-gray-700 mb-2">Rate this response:</p>
+          <div className="flex space-x-2 mb-3">
+            {[0, 1, 2, 3, 4, 5].map((gradeValue) => (
+              <button
+                key={gradeValue}
+                onClick={() => handleGradeSelect(gradeValue)}
+                className={`px-4 py-2 rounded text-base font-medium transition-colors duration-200 ${
+                  selectedGrade === gradeValue
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                }`}
+              >
+                {gradeValue}
+              </button>
+            ))}
+          </div>
+          <div className="flex space-x-3">
+            <button
+              onClick={handleSave}
+              disabled={selectedGrade === null}
+              className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white text-base rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save Grade
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {prediction.grade !== undefined && (
+        <div className="mb-4">
+          <p className="text-base text-gray-700 mb-2">Change grade:</p>
+          <div className="flex space-x-2 mb-3">
+            {[0, 1, 2, 3, 4, 5].map((gradeValue) => (
+              <button
+                key={gradeValue}
+                onClick={() => handleGradeSelect(gradeValue)}
+                className={`px-4 py-2 rounded text-base font-medium transition-colors duration-200 ${
+                  selectedGrade === gradeValue
+                    ? 'bg-blue-600 text-white'
+                    : prediction.grade === gradeValue
+                    ? 'bg-green-100 border-2 border-green-400 text-green-700'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                }`}
+              >
+                {gradeValue}
+              </button>
+            ))}
+          </div>
+          <div className="flex space-x-3">
+            <button
+              onClick={handleSave}
+              disabled={selectedGrade === null}
+              className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white text-base rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Update Grade
+            </button>
             <button
               onClick={handleRemoveGrade}
               className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white text-base rounded"
             >
               Remove Grade
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
       {message && <p className="text-base mt-3 text-green-600">{message}</p>}
     </div>
   );
